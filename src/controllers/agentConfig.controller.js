@@ -331,7 +331,8 @@ const updateAgentController = async (req, res, next) => {
     "guardrails",
     "web_search_filters",
     "gtwy_web_search_filters",
-    "chatbot_auto_answers"
+    "chatbot_auto_answers",
+    "pre_tools"
   ];
 
   for (const field of simple_fields) {

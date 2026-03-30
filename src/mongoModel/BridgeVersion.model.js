@@ -61,17 +61,18 @@ const version = new mongoose.Schema({
     type: String,
     default: null
   },
-  variables_state: {
+  connected_tools: {
     type: Object,
-    default: {}
-  },
-  function_ids: {
-    type: [mongoose.Schema.Types.ObjectId],
-    default: []
-  },
-  variables_path: {
-    type: Object,
-    default: {}
+    default: {
+      function_ids: [],
+      connected_agents: {},
+      built_in_tools: [],
+      doc_ids: [],
+      variables_path: {},
+      variables_state: {},
+      web_search_filters: [],
+      gtwy_web_search_filters: []
+    }
   },
   tool_call_count: {
     type: Number,
@@ -97,10 +98,6 @@ const version = new mongoose.Schema({
     type: String,
     default: ""
   },
-  doc_ids: {
-    type: Array,
-    default: []
-  },
   pre_tools: {
     type: Array,
     default: []
@@ -113,14 +110,6 @@ const version = new mongoose.Schema({
       guardrails_custom_prompt: ""
     }
   },
-  web_search_filters: {
-    type: [String],
-    default: []
-  },
-  gtwy_web_search_filters: {
-    type: [String],
-    default: []
-  },
   user_reference: {
     type: String,
     default: ""
@@ -132,10 +121,6 @@ const version = new mongoose.Schema({
       service: "",
       model: ""
     }
-  },
-  built_in_tools: {
-    type: Array,
-    default: []
   },
   connected_agent_details: {
     type: Object,
@@ -174,10 +159,6 @@ const version = new mongoose.Schema({
   },
   hello_id: {
     type: String
-  },
-  connected_agents: {
-    type: Object,
-    default: {}
   },
   deletedAt: {
     type: Date,

@@ -261,8 +261,16 @@ const updateAgentController = async (req, res, next) => {
 
   // Authorization check is now handled by requireAdminRole middleware
   const current_configuration = agent.configuration || {};
-  let current_variables_path = agent.variables_path || {};
-  let function_ids = agent.function_ids || [];
+  const current_connected_tools = {
+    function_ids: agent.connected_tools?.function_ids || [],
+    connected_agents: agent.connected_tools?.connected_agents || {},
+    built_in_tools: agent.connected_tools?.built_in_tools || [],
+    doc_ids: agent.connected_tools?.doc_ids || [],
+    variables_path: agent.connected_tools?.variables_path || {},
+    variables_state: agent.connected_tools?.variables_state || {},
+    web_search_filters: agent.connected_tools?.web_search_filters || [],
+    gtwy_web_search_filters: agent.connected_tools?.gtwy_web_search_filters || []
+  };
 
   const update_fields = {};
   const user_history = [];
@@ -270,8 +278,6 @@ const updateAgentController = async (req, res, next) => {
   let new_configuration = body.configuration;
   const service = body.service;
   const page_config = body.page_config;
-  const web_search_filter = body.web_search_filters;
-  const gtwy_web_search_filter = body.gtwy_web_search_filters;
 
   if (new_configuration) {
     const { isValid, errorMessage } = validateJsonSchemaConfiguration(new_configuration);
@@ -317,16 +323,12 @@ const updateAgentController = async (req, res, next) => {
     "user_reference",
     "gpt_memory",
     "gpt_memory_context",
-    "doc_ids",
-    "variables_state",
     "IsstarterQuestionEnable",
     "name",
     "bridgeType",
     "meta",
     "fall_back",
     "guardrails",
-    "web_search_filters",
-    "gtwy_web_search_filters",
     "chatbot_auto_answers",
     "auto_model_select",
     "cache_on",
@@ -347,90 +349,60 @@ const updateAgentController = async (req, res, next) => {
   }
 
   if (page_config) update_fields.page_config = page_config;
-  if (web_search_filter !== undefined) update_fields.web_search_filters = web_search_filter;
-  if (gtwy_web_search_filter !== undefined) update_fields.gtwy_web_search_filters = gtwy_web_search_filter;
 
   if (service) {
     update_fields.service = service;
-    if (new_configuration && new_configuration.model) {
-      const configuration = await getDefaultValuesController(service, new_configuration.model, current_configuration, new_configuration.type);
-      new_configuration = { ...configuration, type: new_configuration.type || "chat" };
-    }
   }
 
+  const effective_service = service || agent.service;
+  if (new_configuration?.model) {
+    const configuration = await getDefaultValuesController(effective_service, new_configuration.model, current_configuration, new_configuration.type);
+    new_configuration = {
+      ...configuration,
+      ...new_configuration,
+      type: new_configuration.type || "chat"
+    };
+  }
   if (new_configuration) {
-    if (new_configuration.model && !service) {
-      const current_service = agent.service;
-      const configuration = await getDefaultValuesController(current_service, new_configuration.model, current_configuration, new_configuration.type);
-      new_configuration = { ...new_configuration, ...configuration, type: new_configuration.type || "chat" };
-    }
     update_fields.configuration = { ...current_configuration, ...new_configuration };
   }
 
-  if (body.variables_path) {
-    const variables_path = body.variables_path;
-    const updated_variables_path = { ...current_variables_path, ...variables_path };
-    for (const key in updated_variables_path) {
-      if (Array.isArray(updated_variables_path[key])) {
-        updated_variables_path[key] = {};
+  if (body.connected_tools && typeof body.connected_tools === "object") {
+    const incoming_connected_tools = body.connected_tools;
+    const merged_variables_path = {
+      ...current_connected_tools.variables_path,
+      ...(incoming_connected_tools.variables_path || {})
+    };
+    for (const key in merged_variables_path) {
+      if (Array.isArray(merged_variables_path[key])) {
+        merged_variables_path[key] = {};
       }
     }
-    update_fields.variables_path = updated_variables_path;
-    current_variables_path = updated_variables_path; // Update local reference
-  }
 
-  // Handle built-in tools
-  if (body.built_in_tools_data) {
-    const { built_in_tools, built_in_tools_operation } = body.built_in_tools_data;
-    if (built_in_tools) {
-      const op = built_in_tools_operation === "1" ? 1 : 0;
-      await ConfigurationServices.updateBuiltInTools(version_id || agent_id, built_in_tools, op);
-    }
-  }
+    const merged_connected_tools = {
+      ...current_connected_tools,
+      ...incoming_connected_tools,
+      variables_path: merged_variables_path
+    };
 
-  // Handle agents
-  if (body.agents) {
-    const { connected_agents, agent_status } = body.agents;
-    if (connected_agents) {
-      const op = agent_status === "1" ? 1 : 0;
-      if (op === 0) {
-        for (const agent_info of Object.values(connected_agents)) {
-          const key = agent_info.bridge_id?.toString() ?? agent_info.bridge_id;
-          if (key && current_variables_path[key]) {
-            delete current_variables_path[key];
-            update_fields.variables_path = current_variables_path;
-          }
-        }
-      }
-      await ConfigurationServices.updateAgents(version_id || agent_id, connected_agents, op);
-    }
-  }
-
-  // Handle function data
-  if (body.functionData) {
-    const { function_id, function_operation, script_id } = body.functionData;
-    if (function_id) {
-      const op = function_operation === "1" ? 1 : 0;
+    if (incoming_connected_tools.function_ids !== undefined) {
       const target_id = version_id || agent_id;
+      const previous_ids = (current_connected_tools.function_ids || []).map((id) => id.toString());
+      const next_ids = (incoming_connected_tools.function_ids || []).map((id) => id.toString());
+      const added_ids = next_ids.filter((id) => !previous_ids.includes(id));
+      const removed_ids = previous_ids.filter((id) => !next_ids.includes(id));
 
-      if (op === 1) {
-        if (!function_ids.includes(function_id)) {
-          function_ids.push(function_id);
-          update_fields.function_ids = function_ids.map((fid) => new ObjectId(fid));
-          await ConfigurationServices.updateAgentIdsInApiCalls(function_id, target_id, 1);
-        }
-      } else {
-        if (script_id && current_variables_path[script_id]) {
-          delete current_variables_path[script_id];
-          update_fields.variables_path = current_variables_path;
-        }
-        if (function_ids.includes(function_id)) {
-          function_ids = function_ids.filter((fid) => fid.toString() !== function_id);
-          update_fields.function_ids = function_ids.map((fid) => new ObjectId(fid));
-          await ConfigurationServices.updateAgentIdsInApiCalls(function_id, target_id, 0);
-        }
+      for (const function_id of added_ids) {
+        await ConfigurationServices.updateAgentIdsInApiCalls(function_id, target_id, 1);
       }
+      for (const function_id of removed_ids) {
+        await ConfigurationServices.updateAgentIdsInApiCalls(function_id, target_id, 0);
+      }
+
+      merged_connected_tools.function_ids = next_ids.map((id) => new ObjectId(id));
     }
+
+    update_fields.connected_tools = merged_connected_tools;
   }
 
   // Process users array update if agent_id is provided (not version_id)
@@ -603,7 +575,7 @@ const getAgentController = async (req, res, next) => {
       variables = Helper.findVariablesInString(prompt);
     }
 
-    const variables_path = agent.bridges.variables_path || {};
+    const variables_path = agent.bridges.connected_tools?.variables_path || {};
     const path_variables = [];
     for (const key in variables_path) {
       const val = variables_path[key];

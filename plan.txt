@@ -1,0 +1,119 @@
+
+# Schema Optimization Plan: Execution Roadmap (Approach A)
+
+This execution plan details the step-by-step procedure for migrating your massive `Configuration` schema into logically nested groupings, ensuring the entire stack (Database, API, Frontend state) perfectly mirrors the new architecture.
+
+## Execution Order
+To minimize breakage during rollout, we run the transition in this order:
+1. **DB Migration & Backend Schema Updates**
+2. **Backend Controller Updates**
+3. **Python Inference Integration**
+4. **Frontend Architecture Adjustments**
+
+---
+
+### Phase 1: Database Setup & Migration (`ai-middleware`)
+
+1. **Update Mongoose Schemas**
+   Update both `src/mongoModel/Configuration.model.js` and `BridgeVersion.model.js`. Remove all the scattered root-level keys (`doc_ids`, `function_ids`, `bridge_limit`, `fall_back`, `guardrails`, `users`, etc.) and nest them into exactly 5 schema objects:
+   - `connected_tools`
+   - `agent_limit`
+   - `ai_updates`
+   - `agent_info`
+   - `settings`
+
+2. **Write `migrate-mongo` Execution Script**
+   Create a migration file (e.g., `migrations/2026-03-30-restructure-agent-schema.js`).
+   ```javascript
+   module.exports = {
+     async up(db, client) {
+       const cursor = db.collection('configurations').find({});
+       while(await cursor.hasNext()) {
+         const doc = await cursor.next();
+         
+         const connected_tools = {
+            function_ids: doc.function_ids || [],
+            connected_agents: doc.connected_agents || {},
+            connected_agent_details: doc.connected_agent_details || {},
+            doc_ids: doc.doc_ids || [],
+            variables_path: doc.variables_path || {}, ...
+         };
+         const settings = {
+            guardrails: doc.guardrails || {},
+            fall_back: doc.fall_back || {},
+            users: doc.users || [], ...
+         };
+         
+         await db.collection('configurations').updateOne(
+           { _id: doc._id }, 
+           { 
+             $set: { connected_tools, settings, agent_limit: {...}, ai_updates: {...}, agent_info: {...} },
+             $unset: { function_ids: "", fall_back: "", guardrails: "", users: "", ... }
+           }
+         );
+       }
+       // Repeat cycle for `configuration_versions` collection
+     }
+   }
+   ```
+
+---
+
+### Phase 2: Node.js Controller Updates (`ai-middleware`)
+
+**Target File:** `src/controllers/agentConfig.controller.js`
+
+1. **Payload Extraction**
+   Because the frontend will now natively be sending `settings: { guardrails: {...} }` or `"settings.guardrails": {...}`, you must evaluate if the API `.put()` uses Mongoose `$set` (which natively supports dot notation and object merging) or if you are using `Object.assign`.
+   - Update `createAgentController` to establish these default objects explicitly when a new configuration is spawned so we don't encounter null pointers.
+   - Update `updateAgentController` to natively accept and merge the new nested payloads.
+
+---
+
+### Phase 3: Python Execution Adapters (`ai-middleware-python`)
+
+Because Python expects the API payload strictly as JSON strings, it will immediately start crashing when `body["doc_ids"]` returns `None` after Mongoose is migrated.
+
+**Target File:** `src/services/utils/common_utils.py`
+Inside `parse_request_body`, remap the dictionaries:
+```python
+# Create root reference caches
+connected_tools = body.get("connected_tools", {})
+settings = body.get("settings", {})       
+agent_info = body.get("agent_info", {})
+
+# Access sub-fields robustly
+"doc_ids": connected_tools.get("doc_ids", [])
+"function_ids": connected_tools.get("function_ids", [])
+"fall_back": settings.get("fall_back", {})
+"guardrails": settings.get("guardrails", {})
+```
+
+---
+
+### Phase 4: Frontend "Native" Integration (`AI-middleware-frontend`)
+
+This is the lengthiest phase, identifying where the old Root properties existed in the React Redux components and drilling them one level deeper.
+
+**A. Core Sub-components:**
+Update all individual tool/setting components to drill into the new structures.
+- `components/configuration/configurationComponent/KnowledgebaseList.js`: Change reading/dispatching of `doc_ids` to `<bridge>.connected_tools.doc_ids`.
+- `components/configuration/configurationComponent/EmbedList.js`: Adjust `function_ids`.
+- `components/AgentToAgentConnection.js`: Adjust `connected_agents`.
+- Modals managing `guardrails` and `fall_back` to dispatch the object changes to the `settings` property wrapper.
+
+**B. Configuration Mapping (`bridgeParameter.js`):**
+If `jsonFiles/bridgeParameter.js` utilizes hardcoded parameter targets, update the target keys to match the new nested references.
+
+**C. Redux Hooks (`useConfigurationState.js` & Selectors):**
+Any selector `state.bridgeReducer.bridgeVersionMapping[id][version].doc_ids` must become `.connected_tools.doc_ids`.
+
+**D. Version Comparison View:**
+- `components/comparison/PublishVersionDataComparisonView.js`: This UI compares the published vs draft state keys. It must be updated to compare internal object depths (e.g. iterating keys inside `connected_tools` and `settings`) instead of assuming a flat list of arrays.
+
+---
+
+## Conclusion
+By executing in this order, you cleanly prepare the database, prepare the servers receiving the database, prepare the python nodes analyzing it, and finally deploy the Frontend UI which interacts cleanly directly with the mapped architectures forever.
+schema_optimization_plan.md
+Displaying schema_optimization_plan.md.

@@ -99,13 +99,18 @@ const configuration = new mongoose.Schema({
     type: String,
     default: null
   },
-  variables_path: {
+  connected_tools: {
     type: Object,
-    default: {}
-  },
-  variables_state: {
-    type: Object,
-    default: {}
+    default: {
+      function_ids: [],
+      connected_agents: {},
+      built_in_tools: [],
+      doc_ids: [],
+      variables_path: {},
+      variables_state: {},
+      web_search_filters: [],
+      gtwy_web_search_filters: []
+    }
   },
   starterQuestion: {
     type: Array,
@@ -119,14 +124,6 @@ const configuration = new mongoose.Schema({
     type: String,
     default: ""
   },
-  connected_agents: {
-    type: Object,
-    default: {}
-  },
-  doc_ids: {
-    type: Array,
-    default: []
-  },
   guardrails: {
     type: Object,
     default: {
@@ -134,10 +131,6 @@ const configuration = new mongoose.Schema({
       guardrails_configuration: {},
       guardrails_custom_prompt: ""
     }
-  },
-  built_in_tools: {
-    type: Array,
-    default: []
   },
   fall_back: {
     type: Object,
@@ -162,10 +155,6 @@ const configuration = new mongoose.Schema({
   bridge_status: {
     type: Number,
     default: 1
-  },
-  function_ids: {
-    type: Array,
-    default: []
   },
   agent_variables: {
     type: Object,

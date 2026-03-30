@@ -5,6 +5,7 @@ import { middleware, requireAdminRole } from "../middlewares/middleware.js";
 import validate from "../middlewares/validate.middleware.js";
 import bridgeVersionValidation from "../validation/joi_validation/bridgeVersion.validation.js";
 import { updateBridgeSchema, bridgeIdParamSchema } from "../validation/joi_validation/agentConfig.validation.js";
+import transformAdvancedParamsMiddleware from "../middlewares/transformAdvancedParamsMiddleware.js";
 
 const router = express.Router();
 
@@ -56,6 +57,14 @@ router.get(
 );
 
 //update Version
-router.put("/:version_id", middleware, requireAdminRole, validate(bridgeIdParamSchema), validate(updateBridgeSchema), updateAgentController);
+router.put(
+  "/:version_id",
+  middleware,
+  requireAdminRole,
+  validate(bridgeIdParamSchema),
+  validate(updateBridgeSchema),
+  transformAdvancedParamsMiddleware,
+  updateAgentController
+);
 
 export default router;

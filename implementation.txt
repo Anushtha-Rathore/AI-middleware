@@ -1,0 +1,141 @@
+
+
+# Final Implementation Plan
+
+Based on your clarification, we will use a **hybrid** architecture:
+1. The **frontend** continues to send flat values (e.g. `creativity_level: 2`) but will now also explicitly send the `service` and `model` names in its update payloads.
+2. The **backend** natively transforms those flat values into `{mode, value}` by checking the `modelConfigDocument` definitions before saving.
+3. The **frontend** will receive standard DB documents containing `{mode, value}` on read (GET) and unpack them only for the UI display.
+
+Here are the specific changes to be made:
+
+## Proposed Changes
+
+---
+
+### 1. Frontend (`AI-middleware-frontend`)
+
+#### [MODIFY] [AdvancedParameter.js](file:///c:/Users/Anushtha%20Rathore/Desktop/gtwy/AI-middleware-frontend/components/configuration/configurationComponent/AdvancedParamenter.js)
+
+**A. How the Frontend READS the values for UI Display**
+Since the backend returns the MongoDB object, the frontend UI must extract the `.value` or `.mode` for the UI sliders and dropdowns. 
+We will introduce a simple helper in this component to unpack values:
+```javascript
+const unpackValue = (currentVal) => {
+    if (currentVal && typeof currentVal === 'object' && currentVal.mode !== undefined) {
+        return currentVal.mode === 'custom' ? currentVal.value : currentVal.mode;
+    }
+    return currentVal;
+};
+
+// Modifying the check for default:
+const isDefaultValue = unpackValue(configuration?.[key]) === "default";
+```
+We then wrap all slider/input reads with `unpackValue(inputConfiguration?.[key])`.
+
+**B. How the Frontend SENDS values, service, and model:**
+We maintain the flat payload logic as you requested, but we'll append the `service` and `model` to all `updateBridgeVersionAction` calls:
+```javascript
+let updatedDataToSend = {
+  service: service,  // Using the service resolved at the top level of this component
+  configuration: {
+    model: configuration?.model, // Send the model context
+    [key]: isSlider ? newValue : e.target.type === "checkbox" ? newCheckedValue : newValue,
+  },
+};
+```
+This applies to every `dispatch(updateBridgeVersionAction)` call within the file.
+
+---
+
+### 2. Node.js Backend (`ai-middleware`)
+
+#### [MODIFY] `src/utils/agentConfig.utils.js` (NEW)
+We create the dynamic transformation utility.
+It iterates the incoming flat payload and targets only the advanced metrics natively defined for the model (by detecting a `min` binding in `modelConfigDocument`).
+```javascript
+export const transformAdvancedParams = (payloadConfig, service, modelName, modelConfigDocument) => {
+  if (!payloadConfig || !service || !modelName) return payloadConfig;
+  
+  const serviceLower = service.toLowerCase();
+  const modelDef = modelConfigDocument[serviceLower]?.[modelName]?.configuration;
+  if (!modelDef) return payloadConfig;
+
+  const transformedConfig = { ...payloadConfig };
+  
+  for (const key in payloadConfig) {
+    // If the key exists in DB definition and has min/max properties (indicating an advanced parameter slider)
+    if (modelDef[key] && modelDef[key].type && modelDef[key].type.min !== undefined) {
+      const val = payloadConfig[key];
+      if (val === "default") {
+        transformedConfig[key] = { mode: "default", value: null };
+      } else if (val === "min" || val === "max") {
+        transformedConfig[key] = { mode: val, value: null };
+      } else if (typeof val === "number" || typeof val === "string") {
+        transformedConfig[key] = { mode: "custom", value: Number(val) };
+      }
+    }
+  }
+  return transformedConfig;
+};
+```
+
+#### [MODIFY] [agentConfig.controller.js](file:///c:/Users/Anushtha%20Rathore/Desktop/gtwy/ai-middleware/src/controllers/agentConfig.controller.js)
+Call this utility directly inside `updateAgentController` before MongoDB updates:
+```javascript
+// Resolve the effective service / model configuration
+const effectiveService = body.service || agent.service;
+const effectiveModel = body.configuration?.model || agent.configuration?.model;
+
+if (new_configuration) {
+   new_configuration = transformAdvancedParams(new_configuration, effectiveService, effectiveModel, modelConfigDocument);
+   // Apply usual validation, default overrides, etc
+}
+```
+
+#### [MODIFY] Schema Updates
+Update `Configuration.model.js` and `BridgeVersion.model.js` fields to `Schema.Types.Mixed` to comfortably persist either legacy primitive types passing validation or new `{mode, value}` objects mapping perfectly without breaking the MongoDB schema definition constraints.
+
+---
+
+### 3. Python AI Execution Layer (`ai-middleware-python`)
+
+#### [MODIFY] [serviceKeys.py](file:///c:/Users/Anushtha%20Rathore/Desktop/gtwy/ai-middleware-python/src/configs/serviceKeys.py)
+Update `model_config_change` to safely peel out the `{mode, value}` dictionary schema before firing backend LLM calls.
+
+```python
+async def model_config_change(modelConfiguration, custom_config, service):
+    new_custom_config = custom_config.copy()
+    for key, obj in custom_config.items():
+        mode, value = None, None
+        
+        if isinstance(obj, dict) and "mode" in obj:
+             mode = obj.get("mode")
+             value = obj.get("value")
+        else:
+             mode = obj if obj in ["default", "min", "max"] else "custom"
+             value = obj if mode == "custom" else None
+             
+        # Run original modelConfiguration rules...
+        if mode == "default":
+             if not (service == "anthropic" and key == "max_tokens"):
+                 del new_custom_config[key]
+             else:
+                 new_custom_config[key] = modelConfiguration[key].get("default")
+        elif mode == "min":
+             new_custom_config[key] = modelConfiguration[key].get("min")
+        elif mode == "max":
+             new_custom_config[key] = modelConfiguration[key].get("max")
+        elif mode == "custom":
+             new_custom_config[key] = value
+             
+    return new_custom_config
+```
+
+## User Review Required
+
+> [!IMPORTANT]
+> The plan is finalized for writing! I will add the UI `unpackValue` checks in React so the sliders operate seamlessly via the native `{ mode, value }` arrays received, and modify `AdvancedParameter.js` network dispatches to send the `service` and `model`. The backend logic handles the seamless storage conversions.
+> Once you review this plan, tell me to proceed and I'll jump directly to execution across these codebases!
+implementation_plan.md
+Displaying schema_optimization_plan.md.

@@ -3,6 +3,7 @@ import { middleware, requireAdminRole } from "../middlewares/middleware.js";
 import * as agentConfigController from "../controllers/agentConfig.controller.js";
 import validate from "../middlewares/validate.middleware.js";
 import conversationValidation from "../validation/joi_validation/conversation.validation.js";
+import transformAdvancedParamsMiddleware from "../middlewares/transformAdvancedParamsMiddleware.js";
 import agentConfigValidation from "../validation/joi_validation/agentConfig.validation.js";
 
 const router = express.Router();
@@ -11,11 +12,25 @@ router.get("/", middleware, agentConfigController.getAllAgentController);
 
 router.get("/:agent_id", middleware, validate(agentConfigValidation.getAgent), agentConfigController.getAgentController);
 
-router.post("/", middleware, requireAdminRole, validate(agentConfigValidation.createAgent), agentConfigController.createAgentController);
+router.post(
+  "/",
+  middleware,
+  requireAdminRole,
+  validate(agentConfigValidation.createAgent),
+  transformAdvancedParamsMiddleware,
+  agentConfigController.createAgentController
+);
 
-router.put("/:agent_id", middleware, requireAdminRole, agentConfigController.updateAgentController);
+router.put("/:agent_id", middleware, requireAdminRole, transformAdvancedParamsMiddleware, agentConfigController.updateAgentController);
 
-router.post("/clone", middleware, requireAdminRole, validate(agentConfigValidation.cloneAgent), agentConfigController.cloneAgentController);
+router.post(
+  "/clone",
+  middleware,
+  requireAdminRole,
+  validate(agentConfigValidation.cloneAgent),
+  transformAdvancedParamsMiddleware,
+  agentConfigController.cloneAgentController
+);
 
 router.delete(
   "/:agent_id",

@@ -123,4 +123,110 @@ const cloneFunctionsForAgent = async (function_ids, org_id, agent_id) => {
   return cloned_function_ids;
 };
 
-export { getUniqueNameAndSlug, normalizeFunctionIds, cloneFunctionsForAgent };
+// const getModelParamMap = (service, model, modelConfigDocument) => {
+//   if (!service || !model) return {};
+//   const serviceLower = String(service).toLowerCase();
+//   const modelDef = modelConfigDocument?.[serviceLower]?.[model];
+//   if (!modelDef?.configuration) return {};
+//   returnmodelDef.configuration || {};
+// };
+
+// const isAdvancedParam = (paramDef) => {
+//   if (!paramDef || typeof paramDef !== "object") return false;
+//   return paramDef.min !== undefined || paramDef.max !== undefined;
+// };
+
+// const normalizeModeObject = (raw) => {
+//   if (!(raw && typeof raw === "object" && "mode" in raw)) {
+//     return { mode: "default", value: null };
+//   }
+
+//   const mode = raw.mode;
+//   if (mode === "default" || mode === "min" || mode === "max") {
+//     return { mode, value: null };
+//   }
+
+//   if (mode === "custom") {
+//     return { mode: "custom", value: typeof raw.value === "number" ? raw.value : null };
+//   }
+
+//   return { mode: "default", value: null };
+// };
+
+// const transformAdvancedParams = (payloadConfig, { service, model, modelConfigDocument }) => {
+//   if (!payloadConfig || typeof payloadConfig !== "object") return payloadConfig;
+
+//   const modelParams = getModelParamMap(service, model, modelConfigDocument);
+//   const transformed = { ...payloadConfig };
+
+//   for (const [key, rawValue] of Object.entries(payloadConfig)) {
+//     // strict trigger: only if incoming value is object with mode
+//     if (!(rawValue && typeof rawValue === "object" && "mode" in rawValue)) continue;
+
+//     // optional safety: only transform if key is an advanced parameter for this model
+//     if (!isAdvancedParam(modelParams[key])) continue;
+
+//     transformed[key] = normalizeModeObject(rawValue);
+//   }
+
+//   return transformed;
+// };
+
+const getModelConfigParams = (service, model, modelConfigDocument) => {
+  if (!service || !model) return {};
+  const serviceLower = String(service).toLowerCase();
+  const modelDoc = modelConfigDocument?.[serviceLower]?.[model];
+  if (!modelDoc?.configuration) return {};
+  return modelDoc.configuration.additional_parameters || modelDoc.configuration;
+};
+
+// const isAdvancedParam = (paramDef) => {
+//   if (!paramDef || typeof paramDef !== "object") return false;
+//   return paramDef.field === "slider" || paramDef.min !== undefined || paramDef.max !== undefined;
+// };
+
+const normalizeModeValue = (rawValue) => {
+  if (rawValue && typeof rawValue === "object" && "mode" in rawValue) {
+    const { mode, value } = rawValue;
+
+    if (mode === "default" || mode === "min" || mode === "max") {
+      return { mode, value: null };
+    }
+
+    if (mode === "custom") {
+      return { mode: "custom", value: typeof value === "number" ? value : null };
+    }
+
+    return { mode: "default", value: null };
+  }
+
+  // if (rawValue === "default" || rawValue === "min" || rawValue === "max") {
+  //   return { mode: rawValue, value: null };
+  // }
+
+  // if (typeof rawValue === "number") {
+  //   return { mode: "custom", value: rawValue };
+  // }
+
+  // return { mode: "default", value: null };
+};
+
+const transformAdvancedParams = (payloadConfig, { service, model, modelConfigDocument }) => {
+  if (!payloadConfig || typeof payloadConfig !== "object") return payloadConfig;
+
+  const modelParams = getModelConfigParams(service, model, modelConfigDocument);
+  if (!modelParams || typeof modelParams !== "object") return payloadConfig;
+
+  const transformed = { ...payloadConfig };
+
+  for (const [key, rawValue] of Object.entries(payloadConfig)) {
+    const keyExistsInModelConfig = Object.prototype.hasOwnProperty.call(modelParams, key);
+    if (!keyExistsInModelConfig) continue;
+
+    transformed[key] = normalizeModeValue(rawValue);
+  }
+
+  return transformed;
+};
+
+export { getUniqueNameAndSlug, normalizeFunctionIds, cloneFunctionsForAgent, transformAdvancedParams };

@@ -62,6 +62,15 @@ try {
 app.get("/healthcheck", async (req, res) => {
   res.status(200).send("OK running good...v1.1");
 });
+
+// Add global request logger to see ALL requests
+app.use((req, res, next) => {
+  console.log("🌐 GLOBAL REQUEST:", req.method, req.originalUrl);
+  console.log("🌐 Request headers:", req.headers);
+  console.log("🌐 Request body keys:", Object.keys(req.body || {}));
+  next();
+});
+
 app.use("/api/v1/config", converstaionRoutes);
 app.use("/api/agent", configRoutes);
 app.use("/api/history", historyRoutes);

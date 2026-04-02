@@ -5,8 +5,17 @@ import { middleware, requireAdminRole } from "../middlewares/middleware.js";
 import validate from "../middlewares/validate.middleware.js";
 import bridgeVersionValidation from "../validation/joi_validation/bridgeVersion.validation.js";
 import { updateBridgeSchema, bridgeIdParamSchema } from "../validation/joi_validation/agentConfig.validation.js";
+import { transformAgentAdvanceParametersMiddleware } from "../services/utils/agentAdvanceParameterTransform.utils.js";
+
+console.log("🔍 agentVersion.routes.js loaded with transformAgentAdvanceParametersMiddleware");
 
 const router = express.Router();
+
+// Add logging for all routes
+router.use((req, res, next) => {
+  console.log("🔍 agentVersion.routes.js - Route hit:", req.method, req.originalUrl);
+  next();
+});
 
 //create Version
 router.post("/", middleware, requireAdminRole, validate(bridgeVersionValidation.createVersion), agentVersionController.createVersion);
@@ -56,6 +65,22 @@ router.get(
 );
 
 //update Version
-router.put("/:version_id", middleware, requireAdminRole, validate(bridgeIdParamSchema), validate(updateBridgeSchema), updateAgentController);
+router.put(
+  "/:version_id",
+  middleware,
+  requireAdminRole,
+  validate(bridgeIdParamSchema),
+  validate(updateBridgeSchema),
+  (req, res, next) => {
+    console.log("🚀 PUT /:version_id route hit - about to call middleware");
+    next();
+  },
+  transformAgentAdvanceParametersMiddleware,
+  (req, res, next) => {
+    console.log("🚀 Middleware completed - calling controller");
+    next();
+  },
+  updateAgentController
+);
 
 export default router;

@@ -14,6 +14,7 @@ import { validateJsonSchemaConfiguration } from "../services/utils/common.utils.
 import { modelConfigDocument } from "../services/utils/loadModelConfigs.js";
 import { sendAgentCreatedWebhook } from "../services/utils/agentWebhook.utils.js";
 import { convertPromptToString } from "../utils/promptWrapper.utils.js";
+import { transformToDbFormat, transformToFrontendFormat } from "../services/utils/advancedParam.utils.js";
 
 const createAgentController = async (req, res, next) => {
   try {
@@ -368,7 +369,19 @@ const updateAgentController = async (req, res, next) => {
       const configuration = await getDefaultValuesController(current_service, new_configuration.model, current_configuration, new_configuration.type);
       new_configuration = { ...new_configuration, ...configuration, type: new_configuration.type || "chat" };
     }
-    update_fields.configuration = { ...current_configuration, ...new_configuration };
+    // Merge configurations
+    let mergedConfiguration = { ...current_configuration, ...new_configuration };
+
+    // Transform advanced parameters to DB format
+    const serviceToUse = service || agent.service;
+    const modelToUse = mergedConfiguration.model || current_configuration.model;
+    console.log(`[ADV_PARAM] Transforming for service: ${serviceToUse}, model: ${modelToUse}`);
+    if (serviceToUse && modelToUse) {
+      mergedConfiguration = transformToDbFormat(mergedConfiguration, serviceToUse, modelToUse);
+      console.log(`[ADV_PARAM] Configuration saved to DB:`, JSON.stringify(mergedConfiguration, null, 2));
+    }
+
+    update_fields.configuration = mergedConfiguration;
   }
 
   if (body.variables_path) {
@@ -541,6 +554,14 @@ const updateAgentController = async (req, res, next) => {
     updatedAgent.bridges.service = service;
   }
 
+  // Transform configuration to frontend format for response
+  const responseService = updatedAgent.bridges.service;
+  const responseModel = updatedAgent.bridges.configuration?.model;
+  if (responseService && responseModel && updatedAgent.bridges.configuration) {
+    updatedAgent.bridges.configuration = transformToFrontendFormat(updatedAgent.bridges.configuration, responseService, responseModel);
+    console.log(`[ADV_PARAM] Configuration sent to frontend (after transform):`, JSON.stringify(updatedAgent.bridges.configuration, null, 2));
+  }
+
   const response = await Helper.responseMiddlewareForBridge(
     updatedAgent.bridges.service,
     {
@@ -620,6 +641,14 @@ const getAgentController = async (req, res, next) => {
 
     const all_variables = [...variables, ...path_variables];
     agent.bridges.all_varaibles = all_variables;
+
+    // Transform configuration to frontend format
+    const responseService = agent.bridges.service;
+    const responseModel = agent.bridges.configuration?.model;
+    if (responseService && responseModel && agent.bridges.configuration) {
+      agent.bridges.configuration = transformToFrontendFormat(agent.bridges.configuration, responseService, responseModel);
+      console.log(`[ADV_PARAM] Get agent - transformed config:`, JSON.stringify(agent.bridges.configuration, null, 2));
+    }
 
     // Get access role from middleware (second layer check)
     const access_role = req.access_role || req.role_name || null;

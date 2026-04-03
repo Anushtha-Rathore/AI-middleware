@@ -53,7 +53,7 @@ app.use(express.json());
 // app.use(multer().array());
 try {
   mongoose.set("strictQuery", false);
-  mongoose.connect(config.mongo.uri, {});
+  await mongoose.connect(config.mongo.uri, {});
 } catch (err) {
   console.error("database connection error: ", err.message);
   // logger.error('database connection error: ' + err.message);
